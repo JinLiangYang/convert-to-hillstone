@@ -1,0 +1,16 @@
+('d:\\program files\\python 3.5\\lib\\site-packages\\xlrd-1.0.0-py3.5.egg',
+ None,
+ {'*.so', 'EGG-INFO', '*.pyo', '*.py', '*.pyd', '*.pyc'},
+ 'DATA',
+ [('xlrd\\examples\\namesdemo.xls',
+   'd:\\program files\\python '
+   '3.5\\lib\\site-packages\\xlrd-1.0.0-py3.5.egg\\xlrd\\examples\\namesdemo.xls',
+   'DATA'),
+  ('xlrd\\doc\\compdoc.html',
+   'd:\\program files\\python '
+   '3.5\\lib\\site-packages\\xlrd-1.0.0-py3.5.egg\\xlrd\\doc\\compdoc.html',
+   'DATA'),
+  ('xlrd\\doc\\xlrd.html',
+   'd:\\program files\\python '
+   '3.5\\lib\\site-packages\\xlrd-1.0.0-py3.5.egg\\xlrd\\doc\\xlrd.html',
+   'DATA')])
