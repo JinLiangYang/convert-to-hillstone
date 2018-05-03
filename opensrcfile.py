@@ -1,6 +1,7 @@
 #-*- coding: utf8 -*-
 from tkinter.filedialog import askopenfilename
 import os
+import chardet
 
 
 #class opensrcfile(object):
@@ -15,7 +16,16 @@ def writefile(fileuri,string):
     f.close()
 
 def openfile(fileuri):
-    f=open(fileuri,'r',encoding='utf-8')
+#判断文件是什么编码的，gbk,utf-8等，
+    f = open(fileuri, 'rb')
+    fencoding = chardet.detect(f.read())
+
+    if fencoding['encoding'] == 'ascii':
+        fcode = 'gbk'
+    else:
+        fcode = 'utf-8'
+#判断结束。
+    f=open(fileuri,'r',encoding=fcode)
     listsrcfile=f.readlines()
     f.close
     return listsrcfile
