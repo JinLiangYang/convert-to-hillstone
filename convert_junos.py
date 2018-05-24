@@ -377,6 +377,7 @@ def isjunos(fname):
     addrgroupstr=''
     global addrstr
     addrstr=''
+
     fd = open(fname, 'r', encoding='utf-8')  # 打开源文件
     srcfile = fd.readlines()  # 将源文件读取到列表srcfile中
     print(str(len(srcfile)) + '行')  # 源文件有这些行
