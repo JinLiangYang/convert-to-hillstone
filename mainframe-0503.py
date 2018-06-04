@@ -8,7 +8,7 @@
 import tkinter
 from tkinter import *
 from tkinter.filedialog import askopenfilename
-from convert_topsec import istopsec
+from convert_topsec import *
 from convert_asa import *
 from convert_junos import *
 from convert_excel import *
@@ -160,10 +160,18 @@ def option11():
 def option12():
     originaldeviceis.config(text=var.get())
 
+def option13():
+    updatelog = Toplevel(root)
+    logtext =''
+    logtext +='2018-05-28,更新ASA转换：\n'+ \
+        '能正确转换如下配置：\n'+ \
+        'access-list outside_acl extended permit object-group dev_eip_odc_svc object-group dev_eip_odc host 22.237.192.49\n'
+    label = Label(updatelog, text=logtext)
+    label.pack()
 
 
 root=tkinter.Tk()
-root.title("Trans to Hillstone --by jlyang")
+root.title("Trans to Hillstone --by jlyang ver_18.05.28")
 
 var = tkinter.StringVar()
 menubar = Menu(root)
@@ -186,6 +194,7 @@ filemenu.add_radiobutton(label="EXCEL-(ADDR)", command=option11,variable =var)
 #filemenu.add_separator()
 #filemenu.add_radiobutton(label="Exit", command=root.quit)
 menubar.add_cascade(label="原设备类型", menu=filemenu)
+menubar.add_command(label="更新日志",command=option13)
 
 # 创建主菜单，每个菜单对应的回调函数都是hello
 #menubar.add_radiobutton(label='CISCO',command=hello)
