@@ -107,7 +107,9 @@ def asa_addr_group_trans(list,j):
     temp = 'address ' + addr_group_name + '\n'
     while (j < len(list)):
         words = list[j].split()  # 下一行，定义内容部分
-        if 'object' in words:
+        if 'network-object' not in words:
+            break
+        elif 'object' in words:
             member = words[2]
             temp += ' member ' + member + '\n'
         elif 'description' in words:
@@ -119,8 +121,7 @@ def asa_addr_group_trans(list,j):
             ipstart = words[1]
             ipend = words[2]
             temp += ' range ' + ipstart + ' ' + ipend + '\n'
-        elif 'network-object' not in words:
-            break
+
         else:
             ipnet=words[1]
             netmask=words[2]
@@ -338,8 +339,9 @@ def asa_acl_src_dst_addr(alist,y):   #y是地址串中最后一个元素的下�
     elif y-j+1 ==4:#地址串长度为4
         #eg.tcp 172.26.149.32 255.255.255.224 172.26.141.0 255.255.255.0
         #host 172.25.241.56 host 172.26.156.1
-        #tcp 10.44.0.0 255.255.0.0 host 172.26.140.3
-        #tcp object PMO_21F_IP object-group 21F_BL_UAT_IP
+        #10.44.0.0 255.255.0.0 host 172.26.140.3
+        #object PMO_21F_IP object-group 21F_BL_UAT_IP
+        #object-group OBJ-BaoLeiJi-1 host 10.20.65.13
         if alist[5] == 'any':#如果第一位是any，
             pass
         elif alist[5] == 'host':
@@ -357,10 +359,15 @@ def asa_acl_src_dst_addr(alist,y):   #y是地址串中最后一个元素的下�
                 dstip = alist[7] + '/' + asa_exchangemask(alist[8])
                 string2 = ' src-ip ' + srcip + '\n dst-ip ' + dstip + '\n'
         elif alist[5] == 'object' or alist[5] == 'object-group' :
-            srcip = alist[6]
+#access-list OAS-OUTSIDE-ACL extended deny tcp object-group OBJ-BaoLeiJi-1 host 10.20.65.13 eq www
+            srcip = alist[6]#源地址是地址簿，
             if alist[7] == 'object' or alist[7] == 'object-group' :
-                dstip = alist[8]
+                dstip = alist[8]#目的地址也是地址簿，
                 string2 = ' src-addr ' + srcip + '\n dst-addr ' + dstip + '\n'
+            elif alist[7] == 'host':
+            # object-group OBJ-BaoLeiJi-1 host 10.20.65.13
+                dstip=alist[8]+'/32'
+                string2 = ' src-addr ' + srcip + '\n dst-ip ' + dstip + '\n'
         else:
             srcip=alist[5]+'/'+ asa_exchangemask(alist[6])
             if alist[7] == 'any':
@@ -471,9 +478,20 @@ def asa_acl_aftertcpudp(alist,proto):
         string3 = string3 + ' service ' + service + '\n'
         schedule = alist[m + 1]
         string3 = string3 + ' schedule ' + schedule + '\n'
+    elif 'object-group' in alist:
+#access-list OAS-OUTSIDE-ACL extended deny tcp 10.20.190.0 255.255.255.0 host 10.20.64.10 object-group GBDK-PORT
+        # if alist.index('object-group') == (len(alist)-2):
+        if alist[len(alist)-2] == 'object-group':
+            #倒数第二个元素是object-group，则这个是服务，
+            service = alist[(len(alist)-1)]#最后一个元素是具体服务簿，
+            pass
+            string3 = string3 + asa_acl_src_dst_addr(alist, (len(alist) - 3))
+            #(len(alist) - 3)是地址串中最后一个元素的下标，即目的地址的下标，
+            string3 = string3 + ' service ' + service + '\n'
     else:
         # tcp 172.26.149.32 255.255.255.224 172.26.141.0 255.255.255.0
         # tcp any any
+        # tcp 10.20.190.0 255.255.255.0 host 10.20.64.10 object-group GBDK-PORT
         if alist[4]=='tcp':
             service = 'tcp-any'
         else:
@@ -499,7 +517,7 @@ def asa_trans_extend_acl(alist,j):
         action = words[m + 1]
         # string += '#This is ' + aclname + '\n'
         # string += '#Thist is line'+ str(j+1) +'\n'
-        string += 'rule\n' \
+        string += 'rule id ' + str(j+1)+ '\n' \
                   ' action ' + action + '\n'
         query = 'select   srczone,dstzone from aclgroup_zone where aclgroup="%s";' % aclname
         temp1 = fetchallfrom(query)  # temp1=[(inside,any)]
@@ -508,7 +526,8 @@ def asa_trans_extend_acl(alist,j):
         string +=' src-zone '+srczone+'\n' + \
             ' dst-zone '+dstzone+'\n'
 
-        k = 4#access-list inside_acl extended permit icmp any any
+        k = 4
+        #access-list inside_acl extended permit icmp any any
         try:
             words[k] == 'icmp'
         except:
@@ -525,7 +544,7 @@ def asa_trans_extend_acl(alist,j):
                 string = string + asa_acl_src_dst_addr(words, (len(words) - 1))
                 string = string + ' service '+service+'\n'
             string = string + 'exit\n\n'
-        elif words[k] == 'ip':
+        elif words[k] == 'ip':# 判断下标为4的元素是ip
             service = 'any'
             if 'time-range' in words:
                 m = words.index('time-range')
@@ -549,13 +568,15 @@ def asa_trans_extend_acl(alist,j):
             string = string + asa_acl_aftertcpudp(words,words[k])
             string = string + 'exit\n\n'
         elif words[k] == 'object-group':
-            #access-list outside_acl extended permit object-group QUOSPAP_SVC object UAT_IP_OSP object-group QUOSPAP_SVR
+#access-list outside_acl extended permit object-group QUOSPAP_SVC object UAT_IP_OSP object-group QUOSPAP_SVR
 
-            service=words[k+1]
-            if words[k+2] =='object' or words[k+2] =='object-group':
+            service=words[k+1]#下标为5的元素是服务，
+            if words[k+2] =='object' or words[k+2] =='object-group':# 下标为6的元素是源地址，object或object-group
                 string += ' src-addr '+ words[k+3] + '\n'
             if words[k+4] =='object' or words[k+4] =='object-group':
                 string += ' dst-addr '+ words[k+5] + '\n'
+            elif words[k+4] =='host':
+                string += ' dst-ip ' + words[k + 5] + '/32\n'
             string += ' service ' + service + '\n'
             string += 'exit\n\n'
         j+=1
@@ -730,19 +751,19 @@ def isciscoasa(fileuri):
 ########################
     i =0
     while (i < len(srcfile)):
-        words = srcfile[i].split()
+        words = srcfile[i].split()#当前行存储在列表words中，
         if 'time-range' in words and 'access-list' not in words:
             schedu_str =  schedu_str + asa_trans_schedu(words)
         elif 'interface' in words and len(words)==2:
             (inter_temp,i) = asa_interface_trans(srcfile,i)
             inter_config += inter_temp
-        elif 'object' in words and 'network' in words:
+        elif 'object' in words and 'network' in words:#地址转换
             (addr_book_temp,i)= asa_addr_trans(srcfile,i)
             addr_book += addr_book_temp
-        elif 'object-group' in words and 'network' in words:
+        elif 'object-group' in words and 'network' in words:#地址组转换
             (addr_book_temp, i) = asa_addr_group_trans(srcfile, i)
             addr_book_group += addr_book_temp
-        elif 'object-group' in words and 'service' in words:
+        elif 'object-group' in words and 'service' in words:#服务组转换
             #object-group service 3G-DomainServer-tcp tcp，版本7.1（2）
             # description outsidein 3G-DomainServer password-change tcp-Port
             # port-object eq 135
@@ -757,14 +778,14 @@ def isciscoasa(fileuri):
             # port-object eq 5722
             (service_temp, i) = service_group_trans(srcfile, i)
             service_group += service_temp
-        elif 'access-list' in words and ('standard' in words ):
+        elif 'access-list' in words and ('standard' in words ):#标准ACL转换，
             pass
             #standard_acl = standard_acl + asa_trans_standard_acl(words)
-        elif 'access-list' in words and ('extended' in words):
+        elif 'access-list' in words and ('extended' in words):#扩展ACL转换，
             # break
             (acl_temp,i) = asa_trans_extend_acl(srcfile,i)
             extended_acl += acl_temp
-        elif 'nat' in words and ('static' in words):
+        elif 'nat' in words and ('static' in words):#静态NAT转换，
             #nat (inside,nat_network) source static buixpgw1 buixpgw1_nat
             nat_temp += asa_nat_trans(srcfile,i)
         elif  'route' in words  and words[0] == 'route':
