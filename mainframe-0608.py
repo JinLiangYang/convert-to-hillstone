@@ -5,6 +5,9 @@
 #2018-0115,添加东软配置转换，
 #2018-0319,修改netscreen转换，
 #2018-0613，修改完善ASA转换中的扩展ACL转换问题，
+#2018-0624，修改天融信转换工具，
+#1、可实现，根据策略中的私网ip，将对应的DNAT中的公网ip也添加到策略中。
+#2018-0705,修改完善ASA转换中的扩展ACL转换问题.
 
 import tkinter
 from tkinter import *
@@ -21,6 +24,7 @@ from convert_excel_snat import *
 from convert_excel_transaddress import *
 from creatdb import *
 from convert_neusoft import *
+from modify_ipv4_address_2_v6 import *
 
 
 
@@ -117,6 +121,8 @@ def trans_btnclicked():#转换配置函数
                 done_label.config(text=isexcel_snat(fileuri))
             elif originaldeviceis.cget("text") == "EXCEL-(ADDR)":
                 done_label.config(text=excel_transaddress(fileuri))
+            elif originaldeviceis.cget("text") == "TEST":
+                done_label.config(text=modify_v4_address(fileuri))
             else:
                 pass
         else:
@@ -176,9 +182,14 @@ def option13():
     label = Label(updatelog, text=logtext)
     label.pack()
 
+def option14():
+    originaldeviceis.config(text=var.get())
+
+
+
 
 root=tkinter.Tk()
-root.title("Trans to Hillstone --by jlyang ver_18.05.28")
+root.title("Trans to Hillstone --by jlyang ver_2018.06.24")
 
 
 
@@ -199,6 +210,7 @@ filemenu.add_radiobutton(label="EXCEL-(ADX)", command=option6,variable =var)
 filemenu.add_radiobutton(label="EXCEL-(DNAT)", command=option9,variable =var)
 filemenu.add_radiobutton(label="EXCEL-(SNAT)", command=option10,variable =var)
 filemenu.add_radiobutton(label="EXCEL-(ADDR)", command=option11,variable =var)
+filemenu.add_radiobutton(label="TEST", command=option14,variable =var)
 
 #filemenu.add_separator()
 #filemenu.add_radiobutton(label="Exit", command=root.quit)
