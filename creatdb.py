@@ -133,6 +133,7 @@ def insert2tb_predeservmatch():#20171226
                   ['https','HTTPS','tcp','443','0'], \
                   ['radius','RADIUS','udp','1812','0'], \
                   ['telnet','TELNET','tcp','23','0'], \
+                  ['sqlnet','SQLNETv2','tcp','1521','0'], \
                   ['ftp-data','FTP','tcp','20','0'], \
                   ['ftp','FTP','tcp','21','0']]
     query = "insert into predeservmatch(origservname,hillservname,proto,dstport1,newadd) values(?,?,?,?,?);"
