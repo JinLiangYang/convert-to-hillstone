@@ -397,23 +397,16 @@ def isjunos(fname):
         elif ('set' in words and 'junos-defaults' in words and 'applications' in words and 'application' in words):
             pass
         elif ('set' in words and 'applications' in words and 'application' in words):
-            # print(type(output))
-            # print(type(transservice(srcfile)))
             output = output + transservice(srcfile)
         elif ('set' in words and 'policies' in words and 'from-zone' in words):
-            # print(words)
             output = output + transpolicy(srcfile)
         elif ('set' in words and 'policies' in words and 'global' in words):
-            # print(words)
             output = output + transGpolicy(srcfile)
         elif ('set' in words and 'nat' in words and 'pool' in words and 'address' in words):
-            # print(words)
             output = output + transnatpool(srcfile)
         elif ('set' in words and 'nat' in words and 'source' in words and 'rule-set' in words and 'rule' in words):
-            # print(words)
             output = output + transsnat(srcfile)
         elif ('set' in words and 'nat' in words and 'destination' in words and 'rule-set' in words and 'rule' in words):
-            # print(words)
             output = output + transdnat(srcfile)
         elif ('set routing-options static route' in srcfile[i]):
             output = output + transroute(srcfile)

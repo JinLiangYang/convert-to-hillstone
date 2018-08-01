@@ -47,6 +47,7 @@ def extract_vip(list,x):
     priviteport    TEXT, \
     priviteip    TEXT);"
 
+
     creat_table(qurey)
 
     words = list[x].split()
@@ -63,6 +64,13 @@ def extract_vip(list,x):
     tmplist=[ingressif,publicip,publicport,priviteport,priviteip]
     insert2table_new(qurey,tmplist)
     return x
+
+
+def extract_policynat(alist,k):
+    words = alist[k].split()  # 当前行，在words列表中。
+
+    return k
+
 
 def fetch_vip():
     #
@@ -101,10 +109,13 @@ def isnetscreen(fileuri):
         if ('set service ' in srcfile[i] and 'dst-port' in srcfile[i]):#转换服务
             i = extractservice(srcfile,i)
         #转换VIP成DNAT
-        elif ('set interface ' in srcfile[i] and ' vip ' in srcfile[i] and 'interface-ip' not in srcfile[i]):
+        elif ('set interface ' in srcfile[i] and ' vip ' in srcfile[i] and 'interface-ip' not in srcfile[i]):#转换VIP
             i = extract_vip(srcfile,i)
-            pass
-
+        elif ('policy' in words and 'from' in words and 'nat' in words):#转换带nat的安全策略
+            #print('759')
+            i = extract_policynat(srcfile,i)
+        elif ('policy' in words and 'from' in words):#转换安全策略
+            i = extract_transpolicy(srcfile,i)
         i = i + 1
 
     newconfig=''
