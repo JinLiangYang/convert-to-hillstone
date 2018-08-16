@@ -991,7 +991,8 @@ def asa_bulidservfromdb():
                        ' ' + list(atuple)[3] + ' dst-port ' + list(atuple)[4] + '\n' + \
                        'exit\n'
 
-    query = 'select * from service_s group by servname having count(servname)>=1;'
+    # query = 'select * from service_s group by servname having count(servname)>=1;'
+    query = 'select max(id),servname,proto,dstport from service_s group by servname,proto,dstport having id is not null;'
     temp2 = fetchallfrom(query)  # temp2=[()]
     if temp2:
         for atuple in temp2:  # atuple=(2,tcp-9900,tcp,9900)
