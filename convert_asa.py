@@ -4,6 +4,7 @@ import time
 from opensrcfile import *
 import os
 from creatdb import *
+import re
 
 
 def asa_interface_trans(alist,j):
@@ -47,34 +48,32 @@ def asa_interface_trans(alist,j):
     # j -= 1
     return temp,j
 
-def asa_trans_schedu(list):
-    global i
-    string = 'schedule ' + list[1] + '\n' #list[1]中是对象名字
-    k = i
-    while (('!' not in srcfile[k].split())):
-        k += 1
-    #以上while循环结束时，srcfile[k]中含有！，
-    i += 1
-    while (i < k):
-        list = srcfile[i].split()
-        if 'absolute' in list:
-            m = list.index('start')
-            starttime = list[m+1]
-            startday = list[m+2]
-            startmouth = list[m + 3]
+def asa_trans_schedu(srcfile,j):
+    words = srcfile[j].split()
+    string = 'schedule ' + words[1] + '\n' #list[1]中是对象名字
+    j += 1
+    while (j < len(srcfile)):
+        words =  srcfile[j].split()
+        if '!' in words:
+            break
+        if 'absolute' in words:
+            m = words.index('start')
+            starttime = words[m+1]
+            startday = words[m+2]
+            startmouth = words[m + 3]
             startmouth = en_mouth_to_num(startmouth)
-            startyear = list[m + 4]
-            n = list.index('end')
-            endtime = list[n + 1]
-            endday = list[n + 2]
-            endmouth = list[n + 3]
+            startyear = words[m + 4]
+            n = words.index('end')
+            endtime = words[n + 1]
+            endday = words[n + 2]
+            endmouth = words[n + 3]
             endmouth = en_mouth_to_num(endmouth)
-            endyear = list[n + 4]
+            endyear = words[n + 4]
             string = string + ' absolute start ' + startmouth + '/' + startday + '/' + startyear + ' ' + starttime
             string = string + ' end ' + endmouth + '/' + endday + '/' + endyear + ' ' + endtime + '\n'
             string = string + 'exit\n'
-        i += 1
-    return string
+        j += 1
+    return string,j
 
 
 def asa_exchangemask(mask_b):
@@ -128,23 +127,59 @@ def asa_addr_trans(list,j):
     j-=1
     return temp,j
 
-def asa_addr_group_trans(list,j):
-    words = list[j].split()
+def asa_addr_group_trans(srcfile,j):
+#object-group network DM_INLINE_NETWORK_1
+ # group-object PT04AC
+ # network-object host 10.190.51.19
+
+    words = srcfile[j].split()
     addr_group_name = words[2]
     j += 1
     temp = 'address ' + addr_group_name + '\n'
-    while (j < len(list)):
-        words = list[j].split()  # 下一行，定义内容部分
-        if 'network-object' not in words:
+    while (j < len(srcfile)):
+        words = srcfile[j].split()  # 下一行，定义内容部分
+        #group-object PT04AC
+        if ('network-object' not in words ) and ('group-object' not in words ):
             break
-        elif 'object' in words:
+        elif ('object' in words ):
             member = words[2]
+
+            query = "insert into addr_group(addr_group_name,member) values(?,?);"
+            tmplist = [addr_group_name, member]
+            insert2table_new(query, tmplist)
+
+            temp += ' member ' + member + '\n'
+        elif 'group-object' in words:
+            member = words[1]
+
+            query = "insert into addr_group(addr_group_name,member) values(?,?);"
+            tmplist = [addr_group_name, member]
+            insert2table_new(query, tmplist)
+
             temp += ' member ' + member + '\n'
         elif 'description' in words:
-            temp += list[j]
+            temp += srcfile[j]
         elif 'host' in words:
+            # network-object host PT02DI-SF1-10.190.57.89
+
             ip = words[2]
-            temp += ' ip ' + ip + '/32\n'
+            #先判断是否包含有英文字母，
+            p = 0
+            for l in ip:
+                if l.isalpha():#有英文字母，
+                    p = 1
+                    break
+            if p == 1:#有英文字母，
+                query = "insert into addr_group(addr_group_name,member) values(?,?);"
+                tmplist = [addr_group_name, ip]
+                insert2table_new(query, tmplist)
+
+                temp += ' member ' + ip + '\n'
+            else:
+                query = "insert into addr_group(addr_group_name,member,ipaddr) values(?,?,?);"
+                tmplist = [addr_group_name, 'ip',ip+'/32']
+                insert2table_new(query, tmplist)
+                temp += ' ip ' + ip + '/32\n'
         elif 'range' in words:
             ipstart = words[1]
             ipend = words[2]
@@ -157,8 +192,87 @@ def asa_addr_group_trans(list,j):
         j += 1
     temp += 'exit\n'
     j -= 1
-    return temp, j
+    return temp,j
 
+def service_trans(alist,j):
+    temp = ''
+    words = alist[j].split()
+    # object service tcp-61060
+    #  service tcp source range 1 65535 destination eq 61060
+    # object service tcp_12335，版本8.4（7）23
+    #  service tcp destination eq 12335
+    service_name = words[2]
+    j += 1
+    while (j < len(alist)):
+        words = alist[j].split()  # 第二行，定义内容部分
+
+        pattern1 = re.compile(r'service (tcp|udp) source range (\d+) (\d+) destination eq (\d+)')
+        match1 = pattern1.search(alist[j])
+
+        pattern2 = re.compile(r'service (tcp|udp) destination eq (\d+)')
+        match2 = pattern2.search(alist[j])
+
+        pattern3 = re.compile(r'service (tcp|udp) destination eq')
+        match3 = pattern3.search(alist[j])
+
+        pattern4 = re.compile(r'service (tcp|udp) source range')
+        match4 = pattern4.search(alist[j])
+
+        if (not match3) and (not match4):#'service (tcp|udp) destination eq'不在这一行中，则结束循环。
+            break
+
+        if match1:  # service tcp source range 1 65535 destination eq 61060
+            prot = words[1]
+            port = words[8]
+        elif match2:
+            prot = words[1]
+            port = words[4]
+
+        # 查port在表中对应的端口号，
+        if not port:
+            continue
+        elif port.isdigit():  # port中全是数字，则这是表示端口的，
+            # servname = prot + '-' + port
+            # 将此作为新服务，插入到表中
+            query = "insert into service_s(servname,proto,dstport) values(?,?,?);"
+            tmplist = [service_name, prot, port]
+            insert2table_new(query, tmplist)
+            temp += ' service ' + service_name + '\n'
+            temp += prot + ' dst-port ' + port + '\n'
+        else:  # 去表中查对应的hillstone名字，这时port中一般是英文，比如ftp、ssh等，
+            query = 'select  distinct hillservname from predeservmatch where origservname="%s";' % port
+            temp1 = fetchallfrom(query)  # temp1=[(443,)]
+            if temp1:
+                port = list(temp1[0])[0]
+                temp += ' service ' + port + '\n'
+
+        if 'description' in words:
+            temp += alist[j]
+        elif 'destination range' in alist[j]:
+            portstart = words[4]
+            portend = words[5]
+            servname = prot + '-' + portstart + '-' + portend
+
+            # 将portstart，比如是ftp-data替换为20，
+            query = 'select  distinct dstport1 from predeservmatch where origservname="%s";' % portstart
+            temp1 = fetchallfrom(query)  # temp1=[(443,)]
+            if temp1:
+                portstart = list(temp1[0])[0]
+
+            query = 'select  distinct dstport1 from predeservmatch where origservname="%s";' % portend
+            temp1 = fetchallfrom(query)  # temp1=[(443,)]
+            if temp1:
+                portend = list(temp1[0])[0]
+
+            query = "insert into service_range(servname,proto,dstport1,dstport2) values(?,?,?,?);"
+            tmplist = [servname, prot, portstart, portend]
+            insert2table_new(query, tmplist)
+            temp += ' service ' + servname + '\n'
+
+        j += 1
+    temp += 'exit\n'
+    j -= 1
+    return temp, j
 
 def service_group_trans(alist,j):
     # 服务组有两种类型的，
@@ -169,10 +283,26 @@ def service_group_trans(alist,j):
     # service-object tcp destination eq 9080
     # service-object tcp destination eq 9443
     # service-object tcp destination eq 26999
-    words = alist[j].split()
+
+	# object service tcp_12335，版本8.4（7）23
+	# service tcp destination eq 12335
+
+	# object-group service PT02DI_services_1
+	# service-object tcp destination eq 50000
+	# service-object tcp destination eq 60000
+    words = alist[j].split()#object-group service PT02DI_services_1
     service_group_name = words[2]
+    prot = ''
     temp = 'servgroup ' + service_group_name + '\n'
-    if 'tcp' in words or 'udp' in words:#判断是不是直接定义型的服务组，
+    if 'tcp' in words or 'udp' in words or 'tcp-udp' in words:#判断是不是直接定义型的服务组，
+        '''
+        object-group service DM_INLINE_TCP_28 tcp
+          port-object eq 8083
+          port-object eq https
+        object-group service 3G-PAD-service tcp-udp
+            port-object eq 7778
+            port-object eq 7004
+        '''
         prot = words[3]
         j += 1
         while (j < len(alist)):
@@ -183,16 +313,39 @@ def service_group_trans(alist,j):
                 if port.isdigit():  # port中全是数字，则这是表示端口的，
                     servname = prot + '-' + port
                     # 将此作为新服务，插入到表中
-                    query = "insert into service_s(servname,proto,dstport) values(?,?,?);"
-                    tmplist = [servname, prot, port]
+                    if '-' in prot:
+                        query = "insert into service_s(servname,proto,dstport) values(?,?,?);"
+                        tmplist = [servname, 'tcp', port]
+                        insert2table_new(query, tmplist)
+                        tmplist = [servname, 'udp', port]
+                        insert2table_new(query, tmplist)
+                    else:
+                        query = "insert into service_s(servname,proto,dstport) values(?,?,?);"
+                        tmplist = [servname, prot, port]
+                        insert2table_new(query, tmplist)
+
+                    query = "insert into service_group(servg_name,member) values(?,?);"
+                    tmplist = [service_group_name, servname]
                     insert2table_new(query, tmplist)
+
                     temp += ' service ' + servname + '\n'
                 else:  # 去表中查对应的hillstone名字，这时port中一般是英文，比如ftp、ssh等，
                     query = 'select  distinct hillservname from predeservmatch where origservname="%s";' % port
                     temp1 = fetchallfrom(query)  # temp1=[(443,)]
                     if temp1:
                         port = list(temp1[0])[0]
+
+                        query = "insert into service_group(servg_name,member) values(?,?);"
+                        tmplist = [service_group_name, port]
+                        insert2table_new(query, tmplist)
+
                         temp += ' service ' + port + '\n'
+            elif 'group-object' in words:
+                servname = words[1]
+                query = "insert into service_group(servg_name,member) values(?,?);"
+                tmplist = [service_group_name, servname]
+                insert2table_new(query, tmplist)
+
             elif 'description' in words:
                 temp += alist[j]
             elif 'range' in words:
@@ -200,20 +353,27 @@ def service_group_trans(alist,j):
                 portend = words[3]
                 servname = prot + '-' + portstart + '-' + portend
 
-                # 将portstart，比如是ftp-data替换为20，
-                query = 'select  distinct dstport1 from predeservmatch where origservname="%s";' % portstart
-                temp1 = fetchallfrom(query)  # temp1=[(443,)]
-                if temp1:
-                    portstart = list(temp1[0])[0]
+                if not portstart.isdigit():  # port中不是数字，
+                    # 将portstart，比如是ftp-data替换为20，
+                    query = 'select  distinct dstport1 from predeservmatch where origservname="%s";' % portstart
+                    temp1 = fetchallfrom(query)  # temp1=[(443,)]
+                    if temp1:
+                        portstart = list(temp1[0])[0]
 
-                query = 'select  distinct dstport1 from predeservmatch where origservname="%s";' % portend
-                temp1 = fetchallfrom(query)  # temp1=[(443,)]
-                if temp1:
-                    portend = list(temp1[0])[0]
+                if not portend.isdigit():  # port中不是数字，
+                    query = 'select  distinct dstport1 from predeservmatch where origservname="%s";' % portend
+                    temp1 = fetchallfrom(query)  # temp1=[(443,)]
+                    if temp1:
+                        portend = list(temp1[0])[0]
 
                 query = "insert into service_range(servname,proto,dstport1,dstport2) values(?,?,?,?);"
                 tmplist = [servname, prot, portstart, portend]
                 insert2table_new(query, tmplist)
+
+                query = "insert into service_group(servg_name,member) values(?,?);"
+                tmplist = [service_group_name, servname]
+                insert2table_new(query, tmplist)
+
                 temp += ' service ' + servname + '\n'
             elif 'port-object' not in words:
                 break
@@ -222,28 +382,115 @@ def service_group_trans(alist,j):
         j += 1
         while (j < len(alist)):
             words = alist[j].split()  # 第二行，定义内容部分
-            if 'tcp' in words or 'udp' in words:
+            if not words:#如果这一行是空行。
+                break
+
+            pattern1 = re.compile(r'service (tcp|udp) source range (\d+) (\d+) destination eq (\d+)')
+            match1 = pattern1.search(alist[j])
+
+            pattern2 = re.compile(r'(service-object) (tcp|udp) destination eq ')
+            match2 = pattern2.search(alist[j])
+
+            pattern3 = re.compile(r' group-object ')
+            match3 = pattern3.search(alist[j])
+
+            pattern4 = re.compile(r' service-object icmp ')
+            match4 = pattern4.search(alist[j])
+
+            pattern6 = re.compile(r' service-object object ')
+            match6 = pattern6.search(alist[j])
+
+            #service-object tcp destination range 9070 9086
+            #service-object tcp-udp destination range 161 162
+            pattern5 = re.compile(r' service-object (tcp|udp|tcp-udp) destination range ')
+            match5 = pattern5.search(alist[j])
+
+            if match1:#service tcp source range 1 65535 destination eq 61060
                 prot = words[1]
-                # temp += ' '+prot+ ' dst-port '
-            if 'eq' in words:
+                port = words[8]
+            elif match2:
+                prot = words[1]
                 port = words[4]
-                #查port在表中对应的端口号，
-                if port.isdigit():#port中全是数字，则这是表示端口的，
-                    servname=prot+'-'+port
-                    #将此作为新服务，插入到表中
-                    query = "insert into service_s(servname,proto,dstport) values(?,?,?);"
-                    tmplist = [servname, prot, port]
+            elif match5:
+                #service-object tcp destination range 9070 9086
+                # service-object tcp-udp destination range 161 162
+                prot = words[1]
+                port1 = words[4]
+                port2 = words[5]
+                servname = prot + '-' + port1 + '-' + port2
+
+                if '-' in prot:
+                    query = "insert into service_range(servname,proto,dstport1,dstport2) values(?,?,?,?);"
+                    tmplist = [servname, 'tcp', port1, port2]
                     insert2table_new(query, tmplist)
-                    temp += ' service ' + servname + '\n'
-                else:#去表中查对应的hillstone名字，这时port中一般是英文，比如ftp、ssh等，
-                    query = 'select  distinct hillservname from predeservmatch where origservname="%s";' % port
-                    temp1=fetchallfrom(query)#temp1=[(443,)]
-                    if temp1:
-                        port=list(temp1[0])[0]
-                        temp += ' service '+port + '\n'
-            elif 'description' in words:
+                    tmplist = [servname, 'udp', port1, port2]
+                    insert2table_new(query, tmplist)
+                else:
+                    # 将此作为新服务，插入到表中
+                    query = "insert into service_range(servname,proto,dstport1,dstport2) values(?,?,?,?);"
+                    tmplist = [servname, prot, port1, port2]
+                    insert2table_new(query, tmplist)
+
+                query = "insert into service_group(servg_name,member) values(?,?);"
+                tmplist = [service_group_name, servname]
+                insert2table_new(query, tmplist)
+
+                temp += ' service ' + servname + '\n'
+                j += 1
+                continue
+            elif match3:
+                servname = words[1]
+                query = "insert into service_group(servg_name,member) values(?,?);"
+                tmplist = [service_group_name, servname]
+                insert2table_new(query, tmplist)
+                j += 1
+                continue
+            elif match6:
+                servname = words[2]
+                query = "insert into service_group(servg_name,member) values(?,?);"
+                tmplist = [service_group_name, servname]
+                insert2table_new(query, tmplist)
+                j += 1
+                continue
+
+            elif match4:
+                port = 'ICMP'
+                query = "insert into service_group(servg_name,member) values(?,?);"
+                tmplist = [service_group_name, port]
+                insert2table_new(query, tmplist)
+                j += 1
+                continue
+
+            #查port在表中对应的端口号，
+            if not port:
+                j += 1
+                continue
+            elif port.isdigit():#port中全是数字，则这是表示端口的，
+                servname = prot + '-' + port
+                #将此作为新服务，插入到表中
+                query = "insert into service_s(servname,proto,dstport) values(?,?,?);"
+                tmplist = [servname, prot, port]
+                insert2table_new(query, tmplist)
+                temp += ' service ' + servname + '\n'
+
+                query = "insert into service_group(servg_name,member) values(?,?);"
+                tmplist = [service_group_name,servname]
+                insert2table_new(query, tmplist)
+            else:#去表中查对应的hillstone名字，这时port中一般是英文，比如ftp、ssh等，
+                query = 'select  distinct hillservname from predeservmatch where origservname="%s";' % port
+                temp1=fetchallfrom(query)#temp1=[(HTTPS,)]
+                if temp1:
+                    port=list(temp1[0])[0]
+
+                    query = "insert into service_group(servg_name,member) values(?,?);"
+                    tmplist = [service_group_name, port]
+                    insert2table_new(query, tmplist)
+
+                    temp += ' service ' + port + '\n'
+
+            if 'description' in words:
                 temp += alist[j]
-            elif 'range' in words:
+            elif 'destination range' in alist[j]:
                 portstart = words[4]
                 portend = words[5]
                 servname = prot + '-' + portstart + '-' + portend
@@ -320,6 +567,7 @@ def asa_acl_src_dst_addr(alist,y):   #y是地址串中最后一个元素的下�
         #any host 41.248.98.98
         #host 172.26.136.148 any
         #any 172.26.158.100 255.255.255.252
+        #object-group DM_INLINE_NETWORK_391 any
         if alist[5] =='any':
             #any host 41.248.98.98
             srcip='any'
@@ -423,19 +671,32 @@ def asa_acl_src_dst_addr(alist,y):   #y是地址串中最后一个元素的下�
 
 
 def asa_acl_aftertcpudp(alist,proto):
+    words = alist.split()
     #alist:
     #access-list outside_acl extended permit tcp any host 22.237.188.132 eq 445
     #access-list outside_acl extended permit tcp object PMO_21F_IP object-group 21F_BL_UAT_IP eq 50000
+    #access-list outside_access_in extended permit tcp host 123.138.28.20 object-group ZJXQD-WEB object-group DM_INLINE_TCP_131
     string3=''
     serviceend=''
     global string4
     service=''
 
-    if 'eq' in alist:
-        m = alist.index('eq')
-        string3 = string3 + asa_acl_src_dst_addr(alist, (m - 1))  # 源目的地址部分，交给地址转换函数
+    pattern = re.compile(r'host ((\d+)\.(\d+)\.(\d+)\.(\d+)) object-group ((\w*)(-*)(\w*)) object-group ')
+    match = pattern.search(alist)
 
-        port = alist[m + 1]#下一步到2个表中查此端口对应的服务名字，
+    if match:
+        service = words[10]
+        # string3 += asa_acl_src_dst_addr(words, (len(words) - 3))
+        # (len(words) - 3)是地址串中最后一个元素的下标，即目的地址的下标，
+        string3 += ' src-ip ' + words[6] + '/32\n'
+        string3 += ' dst-addr ' + words[8] + '\n'
+        string3 += ' service ' + service + '\n'
+
+    elif 'eq' in words:
+        m = words.index('eq')
+        string3 = string3 + asa_acl_src_dst_addr(words, (m - 1))  # 源目的地址部分，交给地址转换函数
+
+        port = words[m + 1]#下一步到2个表中查此端口对应的服务名字，
         if port.isdigit():
             query = 'select  distinct servname from service_s where dstport="%s";' % port
             servname_tmp = fetchallfrom(query)  # temp1=[(,)]
@@ -460,18 +721,18 @@ def asa_acl_aftertcpudp(alist,proto):
                 service='需要新建'
         string3 += ' service ' + service + '\n'
 
-        if 'time-range' in alist:
-            m = alist.index('time-range')
-            schedule = alist[m + 1]
+        if 'time-range' in words:
+            m = words.index('time-range')
+            schedule = words[m + 1]
             string3 = string3 + ' schedule ' + schedule + '\n'
-    elif 'range' in alist:
+    elif 'range' in words:
         # extended permit tcp any host 172.26.158.2 range www 81
         # extended permit tcp host 30.32.14.220 host 30.39.252.198 range ssh telnet
-        m = alist.index('range')
-        string3 = string3 + asa_acl_src_dst_addr(alist, (m - 1))  # 交给地址转换函数
+        m = words.index('range')
+        string3 = string3 + asa_acl_src_dst_addr(words, (m - 1))  # 交给地址转换函数
 
-        portstart = alist[m+1]
-        portend = alist[m+2]
+        portstart = words[m+1]
+        portend = words[m+2]
         if portstart.isdigit():#如果是数字，
             pass
         else:#如果不是数字，
@@ -492,7 +753,7 @@ def asa_acl_aftertcpudp(alist,proto):
             else:
                 portend = '需要新建替换'+portend
 
-        service = portstart + '-' + portend  # alist[m+2]是range中的结束端口
+        service = portstart + '-' + portend  # words[m+2]是range中的结束端口
         string4 +=  service + '\n'
         service= proto +'-'+service
         query = "insert into service_range(servname,proto,dstport1,dstport2) values(?,?,?,?);"
@@ -501,37 +762,36 @@ def asa_acl_aftertcpudp(alist,proto):
 
 
         string3 = string3 + ' service ' + service + '\n'
-        if 'time-range' in alist:
-            m = alist.index('time-range')
-            schedule = alist[m + 1]
+        if 'time-range' in words:
+            m = words.index('time-range')
+            schedule = words[m + 1]
             string3 = string3 + ' schedule ' + schedule + '\n'
-    elif 'time-range' in alist:  # 这一行没有端口，是tcp-any，
+    elif 'time-range' in words:  # 这一行没有端口，是tcp-any，
         # extended permit tcp host 172.26.73.52 host 172.26.153.17 time-range 20181231
-        m = alist.index('time-range')
+        m = words.index('time-range')
         service = 'tcp-any'
-        string3 = string3 + asa_acl_src_dst_addr(alist, (m - 1))  # 交给地址转换函数
+        string3 = string3 + asa_acl_src_dst_addr(words, (m - 1))  # 交给地址转换函数
         string3 = string3 + ' service ' + service + '\n'
-        schedule = alist[m + 1]
+        schedule = words[m + 1]
         string3 = string3 + ' schedule ' + schedule + '\n'
-    elif 'object-group' in alist:
+    elif 'object-group' in words:
 #access-list OAS-OUTSIDE-ACL extended deny tcp 10.20.190.0 255.255.255.0 host 10.20.64.10 object-group GBDK-PORT
-        # if alist.index('object-group') == (len(alist)-2):
-        if alist[len(alist)-2] == 'object-group':
+        # if words.index('object-group') == (len(words)-2):
+        if words[len(words)-2] == 'object-group':
             #倒数第二个元素是object-group，则这个是服务，
-            service = alist[(len(alist)-1)]#最后一个元素是具体服务簿，
-            pass
-            string3 = string3 + asa_acl_src_dst_addr(alist, (len(alist) - 3))
-            #(len(alist) - 3)是地址串中最后一个元素的下标，即目的地址的下标，
+            service = words[(len(words)-1)]#最后一个元素是具体服务簿，
+            string3 += asa_acl_src_dst_addr(words, (len(words) - 3))
+            #(len(words) - 3)是地址串中最后一个元素的下标，即目的地址的下标，
             string3 = string3 + ' service ' + service + '\n'
     else:
         # tcp 172.26.149.32 255.255.255.224 172.26.141.0 255.255.255.0
         # tcp any any
         # tcp 10.20.190.0 255.255.255.0 host 10.20.64.10 object-group GBDK-PORT
-        if alist[4]=='tcp':
+        if words[4]=='tcp':
             service = 'tcp-any'
         else:
             service = 'udp-any'
-        string3 = string3 + asa_acl_src_dst_addr(alist, (len(alist) - 1))
+        string3 = string3 + asa_acl_src_dst_addr(words, (len(words) - 1))
         string3 = string3 + ' service ' + service + '\n'
 
     return string3
@@ -542,9 +802,13 @@ def asa_trans_extend_acl(alist,j):
     servicestart = ''
     srczone = ''
     dstzone = ''
-
+    #access-list dmz_access_in extended permit ip object-group DM_INLINE_NETWORK_391 any inactive
     while (j < len(alist)):
         words = alist[j].split()  #
+        query = "insert into line(line) values(?);"
+        tmplist = [str(j)]
+        insert2table_new(query, tmplist)
+
         if 'extended' not in words:
             break
         m = words.index('extended')
@@ -558,10 +822,12 @@ def asa_trans_extend_acl(alist,j):
         if 'inactive' in words:
             string += 'rule\n'+ \
                     ' disable\n'+ \
-                    ' action ' + action + '\n'#如果不需要ruleid，就用这行。
+                    ' action ' + action + '\n'
+            words.remove('inactive')
         else:
-            string += 'rule\n' + \
-                      ' action ' + action + '\n'  # 如果不需要ruleid，就用这行。
+                    # string += 'rule\n' + \        # 如果不需要ruleid，就用这行。
+            string += 'rule id ' + str(j + 1) + '\n' \
+                    ' action ' + action + '\n'
 
         query = 'select   srczone,dstzone from aclgroup_zone where aclgroup="%s";' % aclname
         temp1 = fetchallfrom(query)  # temp1=[(inside,any)]
@@ -612,17 +878,60 @@ def asa_trans_extend_acl(alist,j):
             #eg.permit tcp host 172.26.136.148 any eq https time-range 20171231
             #eg.permit tcp 172.26.149.32 255.255.255.224 172.26.141.0 255.255.255.0
             #access-list outside_acl extended permit tcp object PMO_21F_IP object-group 21F_BL_UAT_IP eq 50000
-            string = string + asa_acl_aftertcpudp(words,words[k])
+            string = string + asa_acl_aftertcpudp(alist[j],words[k])
             string = string + 'exit\n\n'
         #print(list[j])
         elif words[k] == 'udp': # 判断下标为4的元素是udp
             #print('653')
-            string = string + asa_acl_aftertcpudp(words,words[k])
+            string = string + asa_acl_aftertcpudp(alist[j],words[k])
             string = string + 'exit\n\n'
         elif words[k] == 'object-group':
 #access-list outside_acl extended permit object-group QUOSPAP_SVC object UAT_IP_OSP object-group QUOSPAP_SVR
-
+#access-list outside_access_in extended permit object-group DM_INLINE_SERVICE_22 any host 10.190.173.28
             service=words[k+1]#下标为5的元素是服务，
+
+            pattern = re.compile(r'extended (permit|deny) object-group ((\w*)(\d*)) any host ')
+            match = pattern.search(alist[j])
+            #access-list outside_access_in extended permit object-group sxwifi-group any object sxwifi-10.190.178.139
+            pattern2 = re.compile(r'extended (permit|deny) object-group ((\w*)(-*)(\w*)(\d*)) any (object|object-group) ')
+            match2 = pattern2.search(alist[j])
+
+            # access-list outside_access_in extended permit tcp object-group DM_INLINE_NETWORK_269 object-group DM_INLINE_NETWORK_270 object-group DM_INLINE_TCP_117
+            pattern3 = re.compile(r'extended (permit|deny) (tcp|udp) object-group ((\w*)(\d*)) (object|object-group) ((\w*)(\d*)) (object|object-group)')
+            match3 = pattern3.search(alist[j])
+
+            #access-list dmz_access_in extended permit object-group DM_INLINE_SERVICE_10 host 10.190.177.230 object-group REQ051058_EX
+            pattern4 = re.compile(r'extended (permit|deny) object-group ((\w*)(\d*)) host ((\d+)\.(\d+)\.(\d+)\.(\d+)) (object|object-group)')
+            match4 = pattern4.search(alist[j])
+
+            if match:
+                string += ' src-addr any\n'
+                string += ' dst-ip ' + words[8] + '/32\n'
+                string += ' service ' + words[5] + '\n'
+                string += 'exit\n\n'
+                j += 1
+                continue
+            elif match2:
+                string += ' src-addr any\n'
+                string += ' dst-addr ' + words[8] + '\n'
+                string += ' service ' + words[5] + '\n'
+                string += 'exit\n\n'
+                j += 1
+                continue
+            elif match3:
+                string += ' src-addr ' + words[6] + '\n'
+                string += ' dst-addr ' + words[8] + '\n'
+                string += ' service ' + words[10] + '\n'
+                string += 'exit\n\n'
+                j += 1
+                continue
+            elif match4:
+                string += ' src-ip ' + words[7] + '/32\n'
+                string += ' dst-addr ' + words[9] + '\n'
+                string += ' service ' + words[5] + '\n'
+                string += 'exit\n\n'
+                j += 1
+                continue
 
             #下面有待改进为上面的调用函数形式。
             if words[k+2] =='object' or words[k+2] =='object-group':# 下标为6的元素是源地址，object或object-group
@@ -638,6 +947,7 @@ def asa_trans_extend_acl(alist,j):
             string += ' service ' + service + '\n'
             string += 'exit\n\n'
         j+=1
+
     j-=1
     return string,j
 
@@ -739,10 +1049,22 @@ def isciscoasa(fileuri):
     filepath = os.path.split(fileuri)[0]
     origfilename = os.path.split(fileuri)[1]
 
+
+
+    qurey = "CREATE TABLE IF NOT EXISTS line(id integer primary key autoincrement, \
+                    line TEXT);"
+    creat_table(qurey)
+
     qurey = "CREATE TABLE IF NOT EXISTS address(id integer primary key autoincrement, \
                     name TEXT, \
                     type TEXT, \
                     net TEXT);"
+    creat_table(qurey)
+
+    qurey = "CREATE TABLE IF NOT EXISTS addr_group(id integer primary key autoincrement, \
+                    addr_group_name TEXT, \
+                    member TEXT, \
+                    ipaddr TEXT);"
     creat_table(qurey)
 
 
@@ -751,6 +1073,12 @@ def isciscoasa(fileuri):
                 proto TEXT, \
                 dstport TEXT);"
     creat_table(qurey)
+
+    qurey = "CREATE TABLE IF NOT EXISTS service_group(id integer primary key autoincrement, \
+                servg_name TEXT, \
+                member TEXT);"
+    creat_table(qurey)
+
 
     qurey = "CREATE TABLE IF NOT EXISTS service_range(id integer primary key autoincrement, \
                     servname TEXT, \
@@ -819,14 +1147,21 @@ def isciscoasa(fileuri):
     schedu_count = 0
     addr_book_count = 0
     addr_book_group_count = 0
+    service_count = 0
     servgroup_count = 0
     standard_acl_count = 0
     extended_acl_count = 0
     i =0
     while (i < len(srcfile)):
         words = srcfile[i].split()#当前行存储在列表words中，
+
+        query = "insert into line(line) values(?);"
+        tmplist = [str(i)]
+        insert2table_new(query, tmplist)
+
         if 'time-range' in words and 'access-list' not in words:
-            schedu_str =  schedu_str + asa_trans_schedu(words)
+            (schedu_str_temp,i)  = asa_trans_schedu( srcfile,i )
+            schedu_str  += schedu_str_temp
             schedu_count += 1
         elif 'interface' in words and len(words)==2:
             (inter_temp,i) = asa_interface_trans(srcfile,i)
@@ -836,10 +1171,14 @@ def isciscoasa(fileuri):
             addr_book += addr_book_temp
             addr_book_count += 1
         elif 'object-group' in words and 'network' in words:#地址组转换
-            (addr_book_temp, i) = asa_addr_group_trans(srcfile, i)
-            addr_book_group += addr_book_temp
+            (addr_book_group_temp,i) = asa_addr_group_trans(srcfile, i)
+            addr_book_group += addr_book_group_temp
             addr_book_group_count += 1
-        elif 'object-group' in words and 'service' in words:#服务组转换
+        elif 'object service ' in srcfile[i]:#服务的转换
+            (service_temp, i) = service_trans(srcfile, i)
+            service_group += service_temp
+            service_count += 1
+        elif ('object-group' in words or 'object' in words) and 'service' in words:#服务组转换
             #object-group service 3G-DomainServer-tcp tcp，版本7.1（2）
             # description outsidein 3G-DomainServer password-change tcp-Port
             # port-object eq 135
@@ -852,6 +1191,13 @@ def isciscoasa(fileuri):
             # port-object eq 3269
             # port-object range 50000 60000
             # port-object eq 5722
+
+			#object service tcp_12335，版本8.4（7）23
+ 			# service tcp destination eq 12335
+			#object-group service PT02DI_services_1
+ 			# service-object tcp destination eq 50000
+ 			# service-object tcp destination eq 60000
+
             (service_temp, i) = service_group_trans(srcfile, i)
             service_group += service_temp
             servgroup_count += 1
@@ -879,7 +1225,6 @@ def isciscoasa(fileuri):
 
     #取出service_s中的所有服务，并转换成脚本，
     service=''
-
 
     newfileuri = filepath + '/'+origfilename+'_new_config_' + temptime + '.txt'
     service = asa_bulidservfromdb()
